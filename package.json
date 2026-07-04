@@ -1,0 +1,41 @@
+{
+  "name": "fadua-woocommerce-sheets-sync",
+  "version": "1.0.0",
+  "description": "Sincroniza productos visibles de WooCommerce (fadua.ar/pruebas) con Google Sheets cada 5 minutos y notifica por email.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "src/sync.js",
+  "scripts": {
+    "start": "node src/sync.js",
+    "wc:test": "node src/woocommerce.js",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "woocommerce",
+    "google-sheets",
+    "sync",
+    "cron"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.18.1",
+    "dotenv": "^17.4.2",
+    "pino": "^10.3.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.6.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.7.0",
+    "pino-pretty": "^13.1.3",
+    "prettier": "^3.9.4",
+    "vitest": "^4.1.9"
+  }
+}

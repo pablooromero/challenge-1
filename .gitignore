@@ -1,0 +1,20 @@
+# Dependencias
+node_modules/
+
+# Secretos y credenciales — NUNCA subir a git
+.env
+.env.local
+credentials/
+*.pem
+
+# Logs
+logs/
+*.log
+
+# Sistema operativo / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Coverage de tests
+coverage/

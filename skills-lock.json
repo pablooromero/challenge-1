@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "gws-sheets": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "21c951f8bf399bb941740ab8b048157b43088ad96b743976e88abb0046d263d2"
+    },
+    "sheets-automation": {
+      "source": "claude-office-skills/skills",
+      "sourceType": "github",
+      "computedHash": "59bbe5beab5cad9db924e4ab521c72ca151499c18e3aa20768587191ecd5f15e"
+    }
+  }
+}
