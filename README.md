@@ -121,7 +121,7 @@ cp .env.example .env
 | `WC_CONSUMER_KEY` / `WC_CONSUMER_SECRET` | Credenciales de la REST API (uso solo lectura). |
 | `WC_PRODUCT_STATUS` | Estado a sincronizar (`publish` = visibles en la web). |
 | `WC_TIMEOUT_MS` / `WC_MAX_RETRIES` | Timeout y reintentos de la API. |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Ruta al JSON del service account. |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Ruta al JSON del service account. En Cloud Run puede omitirse para usar ADC. |
 | `GOOGLE_SHEET_ID` | ID de la planilla (de su URL). |
 | `GOOGLE_SHEET_TAB` | Nombre de la pestaña de trabajo. |
 | `SMTP_HOST` / `SMTP_PORT` | Servidor SMTP. |
@@ -184,10 +184,26 @@ de la API, `date_created` puede venir nulo en algunos productos.
 
 ## Despliegue
 
-El sistema se ejecuta de forma desatendida en un servidor mediante un cron que
-dispara `node src/sync.js` cada 5 minutos. Los secretos (`.env` y el JSON del
-service account) se colocan en el servidor con permisos restringidos (`chmod 600`)
-y nunca se versionan.
+La opción recomendada para este proyecto es **Google Cloud Run Job + Cloud Scheduler**:
+el contenedor corre una vez, sincroniza y termina. En ese entorno, el acceso a
+Google Sheets puede resolverse por **ADC** con el service account del runtime,
+sin subir el JSON privado al contenedor.
+
+Referencia rápida:
+
+```bash
+cp env.cloudrun.example.yaml env.yaml
+gcloud run jobs deploy fadua-sync \
+  --source . \
+  --region southamerica-east1 \
+  --service-account fadua-sync-sa@affable-envoy-465305-m0.iam.gserviceaccount.com \
+  --env-vars-file env.yaml \
+  --max-retries 1 \
+  --task-timeout 120s
+```
+
+Para el paso a paso completo, ver `DEPLOY-CLOUDRUN.md`. La alternativa VPS
+tradicional con cron quedó documentada en `DEPLOY.md`.
 
 ---
 

@@ -21,6 +21,16 @@ const boolFromEnv = (defaultValue) =>
     .default(defaultValue ? 'true' : 'false')
     .transform((v) => v === 'true');
 
+/** Trata strings vacíos como "no definido" para soportar fallbacks limpios. */
+const optionalStringFromEnv = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string') return value;
+    const trimmed = value.trim();
+    return trimmed === '' ? undefined : trimmed;
+  },
+  z.string().min(1).optional(),
+);
+
 const schemas = {
   woocommerce: z.object({
     WC_BASE_URL: z.url(),
@@ -31,7 +41,7 @@ const schemas = {
     WC_MAX_RETRIES: z.coerce.number().int().nonnegative().default(3),
   }),
   sheets: z.object({
-    GOOGLE_APPLICATION_CREDENTIALS: z.string().min(1),
+    GOOGLE_APPLICATION_CREDENTIALS: optionalStringFromEnv,
     GOOGLE_SHEET_ID: z.string().min(1),
     GOOGLE_SHEET_TAB: z.string().min(1).default('Productos'),
   }),
@@ -61,7 +71,7 @@ const shapers = {
     maxRetries: d.WC_MAX_RETRIES,
   }),
   sheets: (d) => ({
-    credentialsPath: d.GOOGLE_APPLICATION_CREDENTIALS,
+    credentialsPath: d.GOOGLE_APPLICATION_CREDENTIALS ?? null,
     sheetId: d.GOOGLE_SHEET_ID,
     tab: d.GOOGLE_SHEET_TAB,
   }),
