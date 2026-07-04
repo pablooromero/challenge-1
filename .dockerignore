@@ -1,0 +1,14 @@
+node_modules
+.env
+.env.local
+credentials
+logs
+coverage
+test
+.git
+.github
+*.md
+Dockerfile
+.dockerignore
+eslint.config.js
+vitest.config.js

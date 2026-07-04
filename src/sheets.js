@@ -10,10 +10,10 @@
  * Autenticación: Service Account (JWT) con el scope mínimo `spreadsheets`.
  * El acceso se concede compartiendo el Sheet con el email del service account.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { GoogleSpreadsheet } from 'google-spreadsheet';
-import { JWT } from 'google-auth-library';
+import { JWT, GoogleAuth } from 'google-auth-library';
 import { sheetsConfig } from './config.js';
 import { logger } from './logger.js';
 
@@ -22,27 +22,35 @@ export const HEADERS = ['ID', 'Nombre', 'Precio', 'URL Imagen', 'Fecha alta (Woo
 
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
-/** Lee y parsea el JSON del service account, con un error claro si falta. */
-function loadCredentials(path) {
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'));
-  } catch (err) {
-    if (err.code === 'ENOENT') {
-      throw new Error(
-        `No se encontró el archivo de credenciales en "${path}". ` +
-          `Descargá el JSON del service account y colocalo ahí (ver FASE-0-SETUP.md).`,
-        { cause: err },
-      );
+/**
+ * Construye el mecanismo de autenticación con Google:
+ *  - Desarrollo: si existe el JSON del service account, se usa como JWT.
+ *  - Producción (Cloud Run / GCP): si NO hay key file, se usa Application Default
+ *    Credentials (ADC), es decir, la identidad del runtime service account.
+ *    Ventaja de seguridad: la clave privada nunca sale de Google (no se sube).
+ * @returns {{ auth: JWT|GoogleAuth, email: string|null }}
+ */
+function buildAuth(path) {
+  if (path && existsSync(path)) {
+    let creds;
+    try {
+      creds = JSON.parse(readFileSync(path, 'utf8'));
+    } catch (err) {
+      throw new Error(`No se pudo leer el JSON del service account: ${err.message}`, { cause: err });
     }
-    throw new Error(`No se pudo leer el JSON del service account: ${err.message}`, { cause: err });
+    const auth = new JWT({ email: creds.client_email, key: creds.private_key, scopes: SCOPES });
+    return { auth, email: creds.client_email };
   }
+  // Sin key file: ADC (la identidad del entorno de ejecución, p. ej. Cloud Run).
+  return { auth: new GoogleAuth({ scopes: SCOPES }), email: null };
 }
 
 /** Traduce errores crudos de la API a mensajes accionables. */
 function explainConnError(err, cfg, saEmail) {
   const status = err.response?.status;
   if (status === 403) {
-    return `Permiso denegado sobre el Sheet. Compartilo (rol Editor) con el service account: ${saEmail}`;
+    const quien = saEmail ?? 'el runtime service account (ADC)';
+    return `Permiso denegado sobre el Sheet. Compartilo (rol Editor) con el service account: ${quien}`;
   }
   if (status === 404) {
     return `No se encontró el Sheet con ID "${cfg.sheetId}". Verificá GOOGLE_SHEET_ID en el .env.`;
@@ -53,23 +61,16 @@ function explainConnError(err, cfg, saEmail) {
 export class SheetsClient {
   constructor(cfg = sheetsConfig()) {
     this.cfg = cfg;
-    this.credentials = loadCredentials(cfg.credentialsPath);
+    const { auth, email } = buildAuth(cfg.credentialsPath);
+    this.auth = auth;
+    this.serviceAccountEmail = email; // null cuando se usa ADC (runtime service account)
     this.doc = null;
     this.sheet = null;
   }
 
-  get serviceAccountEmail() {
-    return this.credentials.client_email;
-  }
-
   /** Abre el documento y resuelve la pestaña de trabajo (creándola si hace falta). */
   async connect() {
-    const auth = new JWT({
-      email: this.credentials.client_email,
-      key: this.credentials.private_key,
-      scopes: SCOPES,
-    });
-    const doc = new GoogleSpreadsheet(this.cfg.sheetId, auth);
+    const doc = new GoogleSpreadsheet(this.cfg.sheetId, this.auth);
 
     try {
       await doc.loadInfo();
@@ -150,7 +151,7 @@ export class SheetsClient {
 async function main() {
   try {
     const client = new SheetsClient();
-    logger.info(`Service account en uso: ${client.serviceAccountEmail}`);
+    logger.info(`Autenticación: ${client.serviceAccountEmail ?? 'ADC (identidad del entorno)'}`);
     await client.connect();
     await client.ensureHeader();
     const ids = await client.getExistingIds();

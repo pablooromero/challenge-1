@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isRetryableError, withRetry } from '../src/utils/retry.js';
+import { isRetryableError, getRetryAfterMs, withRetry } from '../src/utils/retry.js';
 
 describe('isRetryableError', () => {
   it('reintenta ante errores de red (sin response)', () => {
@@ -15,6 +15,30 @@ describe('isRetryableError', () => {
   it('NO reintenta ante 4xx definitivos', () => {
     expect(isRetryableError({ response: { status: 401 } })).toBe(false);
     expect(isRetryableError({ response: { status: 404 } })).toBe(false);
+  });
+});
+
+describe('getRetryAfterMs', () => {
+  it('interpreta Retry-After expresado en segundos', () => {
+    expect(getRetryAfterMs({ response: { headers: { 'retry-after': '2' } } })).toBe(2000);
+  });
+
+  it('interpreta Retry-After como HTTP-date', () => {
+    const now = Date.now();
+    const en3s = new Date(now + 3000).toUTCString();
+    const ms = getRetryAfterMs({ response: { headers: { 'retry-after': en3s } } }, now);
+    expect(ms).toBeGreaterThanOrEqual(2000);
+    expect(ms).toBeLessThanOrEqual(3000);
+  });
+
+  it('devuelve null si el header no está', () => {
+    expect(getRetryAfterMs({ response: { headers: {} } })).toBeNull();
+    expect(getRetryAfterMs(new Error('sin response'))).toBeNull();
+  });
+
+  it('acota a un máximo y nunca es negativo', () => {
+    expect(getRetryAfterMs({ response: { headers: { 'retry-after': '99999' } } })).toBe(60000);
+    expect(getRetryAfterMs({ response: { headers: { 'retry-after': '-5' } } })).toBe(0);
   });
 });
 

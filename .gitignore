@@ -6,6 +6,7 @@ node_modules/
 .env.local
 credentials/
 *.pem
+env.yaml
 
 # Logs
 logs/
