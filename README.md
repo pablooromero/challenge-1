@@ -65,6 +65,33 @@ deduplicar, evitando la necesidad de una base de datos externa.
 
 ---
 
+## Decisiones de diseño
+
+Las decisiones de este proyecto no son suposiciones: surgen de consultar la **API real**
+de `fadua.ar` con las credenciales del challenge. Los hallazgos y su impacto:
+
+| Hallazgo (dato real de la API) | Decisión de diseño |
+|---|---|
+| `date_created` puede venir `null` (ej. un producto en `draft`) | **No** detectar novedades por fecha: deduplicar por `id`. |
+| La API devuelve productos `draft` por defecto (no visibles en la web) | Filtrar `status=publish` (configurable por env). |
+| La paginación se informa por headers (`X-WP-TotalPages`), máx. `per_page=100` | Paginar con `orderby=id&order=asc` (orden estable). |
+| `price` llega como string (`"700"`) | Normalizar el precio; no asumir que es número. |
+| `images` puede venir vacío | Acceso defensivo: `images?.[0]?.src ?? ""`. |
+
+**El Sheet es la fuente de verdad del estado.** En cada corrida se leen los `id` ya
+presentes y solo se insertan los que faltan. Esto hace el proceso **idempotente** (una
+corrida fallida se recupera sola, sin duplicar) y evita depender de una base de datos
+externa.
+
+**Orden Sheet → Mail.** Se escribe en la planilla *antes* de notificar, para que el
+email nunca reporte productos que no quedaron guardados.
+
+**Serverless por sobre VPS.** Para un script que corre unos segundos cada 5 minutos, se
+eligió Cloud Run Job + Cloud Scheduler: sin servidor que mantener, dentro del free tier,
+y sin subir la clave privada gracias a ADC. La alternativa VPS queda en `DEPLOY.md`.
+
+---
+
 ## Stack
 
 - **Node.js 22** (ES Modules).
@@ -158,6 +185,20 @@ npm run lint           # ESLint
 npm run format         # Prettier
 ```
 
+### Ejemplo de una corrida
+
+```text
+INFO: Iniciando sincronización
+INFO: Productos traídos de WooCommerce (total: 8, status: publish)
+INFO: Conectado al Google Sheet
+INFO: Diff calculado (totalWoo: 8, yaEnSheet: 4, nuevos: 4)
+INFO: Productos escritos en el Sheet (insertados: 4)
+INFO: Email de resumen enviado (nuevos: 4)
+INFO: Sincronización completada (duracionMs: 3821)
+```
+
+Una segunda corrida inmediata registra `nuevos: 0` y sale sin escribir ni notificar.
+
 ### Columnas de la planilla
 
 | ID | Nombre | Precio | URL Imagen | Fecha alta (Woo) | Sincronizado |
@@ -179,6 +220,24 @@ propio Sheet:
 
 Se deduplica por `id` (y no por fecha de creación) porque, según los datos reales
 de la API, `date_created` puede venir nulo en algunos productos.
+
+---
+
+## Manejo de errores
+
+El sistema está pensado para fallar de forma segura y recuperarse solo:
+
+- **Reintentos selectivos:** las llamadas a WooCommerce se reintentan con backoff
+  exponencial solo ante errores *transitorios* (red, timeout, `429`, `5xx`) y
+  respetando el header `Retry-After`. Ante errores definitivos (`401/403/404`) no se
+  reintenta, porque no cambiaría el resultado.
+- **Fail-fast en configuración:** al arrancar se valida toda la config con `zod`; si
+  falta o es inválida una variable, el proceso aborta con un mensaje claro.
+- **Fail-safe en runtime:** ante cualquier error se aborta sin tocar el estado, se
+  registra el error, se intenta una alerta por email (best-effort) y se sale con
+  código distinto de cero, para que el scheduler lo detecte.
+- **Idempotencia como red de seguridad:** como el estado vive en el Sheet, una corrida
+  que falla no corrompe nada; la siguiente (en ≤ 5 min) se pone al día automáticamente.
 
 ---
 
@@ -213,6 +272,7 @@ tradicional con cron quedó documentada en `DEPLOY.md`.
 npm test
 ```
 
-La suite cubre la lógica de negocio pura, sin tocar servicios externos:
-deduplicación de productos, normalización de datos, política de reintentos y
-armado del email (incluyendo escape anti-inyección HTML).
+La suite (26 tests unitarios) cubre la lógica de negocio pura, sin tocar servicios
+externos: deduplicación de productos, normalización de datos, política de reintentos
+y armado del email (incluyendo escape anti-inyección HTML). Los casos borde salen de
+datos reales de la API (`date_created` nulo, `images` vacío, `price` como string).
